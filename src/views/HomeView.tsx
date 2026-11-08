@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { usePartnerStatus } from '@/lib/usePartnerStatus';
+import { PkBadge } from '@/components/PkBadge';
 import { useLanguage } from '@/lib/LanguageContext';
 import { bdt, coinsToBdt, coinsToBdtDisplay } from '@/lib/format';
 import type { Profile } from '@/lib/supabase';
@@ -38,6 +40,7 @@ export function HomeView({
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const unreadCount = useUnreadNoticeCount();
+  const isPartner = usePartnerStatus(true);
   const balance = profile?.balance ?? 0;
   const rank = profile?.rank ?? 0;
   const coins = profile?.coins ?? 0;
@@ -67,7 +70,10 @@ export function HomeView({
           <img src="/assets/images/97428-removebg-preview.png" alt="ET work BD logo" className="h-11 w-11 shrink-0 rounded-xl object-cover" />
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-[18px] font-extrabold leading-tight tracking-tight text-slate-900">ET work BD</h1>
-            <p className="truncate text-xs font-medium text-slate-500">{userName}</p>
+            <p className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-slate-500">
+              <span className="truncate">{userName}</span>
+              {isPartner && <PkBadge />}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <button

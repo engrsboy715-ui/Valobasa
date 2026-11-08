@@ -15,11 +15,12 @@ import { SupportView } from '@/views/SupportView';
 import { TutorialsView } from '@/views/TutorialsView';
 import { MyCreatedWork, MySubmissions } from '@/views/MyWorkView';
 import { InfoModal, type ModalKind } from '@/views/InfoModals';
-import type { SideMenuDestination } from '@/components/SideNavDrawer';
+import { SideNavDrawer, type SideMenuDestination } from '@/components/SideNavDrawer';
+import { PartnerKeyView } from '@/views/PartnerKeyView';
 import { Loader2 } from 'lucide-react';
 import { Toast } from '@/components/ui';
 
-type Screen = TabKey | 'deposit' | 'withdraw' | 'admin' | 'referral' | 'verification' | 'support' | 'tutorials' | 'my-created' | 'my-submissions';
+type Screen = TabKey | 'deposit' | 'withdraw' | 'admin' | 'referral' | 'verification' | 'partner-key' | 'support' | 'tutorials' | 'my-created' | 'my-submissions';
 
 const ADMIN_EMAIL = 'mdesrafil2510@gmail.com';
 
@@ -65,6 +66,7 @@ function App() {
     if (dest === 'profile') { setTab('profile'); return; }
     if (dest === 'referral') { setTab('referral'); return; }
     if (dest === 'verification') { setTab('verification'); return; }
+    if (dest === 'partner-key') { setTab('partner-key'); return; }
     if (dest === 'support') { setTab('support'); return; }
     if (dest === 'share') { setModal('share'); return; }
     if (dest === 'rate') { setModal('rate'); return; }
@@ -73,10 +75,10 @@ function App() {
     if (dest === 'about') { setModal('about'); return; }
   };
 
-  const showBottomNav = tab !== 'deposit' && tab !== 'withdraw' && tab !== 'admin' && tab !== 'referral' && tab !== 'verification' && tab !== 'support' && tab !== 'tutorials' && tab !== 'my-created' && tab !== 'my-submissions';
+  const showBottomNav = tab !== 'deposit' && tab !== 'withdraw' && tab !== 'admin' && tab !== 'referral' && tab !== 'verification' && tab !== 'support' && tab !== 'tutorials' && tab !== 'my-created' && tab !== 'my-submissions' && tab !== 'partner-key';
 
   return (
-    <div className="mx-auto min-h-screen w-full max-w-md bg-slate-100 pb-24">
+    <div className="mx-auto min-h-screen w-full max-w-md bg-slate-100 pb-[calc(6rem+env(safe-area-inset-bottom))]">
       {tab === 'home' && <HomeView go={go} userName={displayName} profile={profile} onSideMenuNavigate={onSideMenuNavigate} />}
       {tab === 'work' && <WorkView profile={profile} onGoDeposit={() => setTab('deposit')} />}
       {tab === 'create' && <CreateView profile={profile} onChanged={refreshProfile} />}
@@ -87,6 +89,7 @@ function App() {
       {tab === 'admin' && isAdmin(profile, session?.user?.email) && <AdminView onExit={() => setTab('profile')} />}
       {tab === 'referral' && <ReferralView onBack={() => setTab('home')} profile={profile} />}
       {tab === 'verification' && <VerificationView onBack={() => setTab('home')} />}
+      {tab === 'partner-key' && <PartnerKeyView onBack={() => setTab('home')} profile={profile} />}
       {tab === 'support' && <SupportView onBack={() => setTab('home')} profile={profile} />}
       {tab === 'tutorials' && <TutorialsView onBack={() => setTab('home')} />}
       {tab === 'my-created' && <MyCreatedWork onBack={() => setTab('home')} />}

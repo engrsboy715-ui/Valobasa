@@ -6,6 +6,8 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { logout } from '@/App';
 import { cn } from '@/lib/cn';
 import { createWithdrawal, fetchMyTransactions, type Profile, type TransactionRow } from '@/lib/supabase';
+import { usePartnerStatus } from '@/lib/usePartnerStatus';
+import { PkBadge } from '@/components/PkBadge';
 import {
   Wallet as WalletIcon, ArrowDownToLine, ArrowUpFromLine, Coins, TrendingUp,
   TrendingDown, AlertCircle, History, Shield, LogOut, X, Loader2,
@@ -296,6 +298,7 @@ export function ProfileView({ goAdmin, profile, sessionEmail }: { goAdmin: () =>
   const liveCoins = profile?.coins ?? 0;
   const [loggingOut, setLoggingOut] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const isPartner = usePartnerStatus(true);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -308,7 +311,10 @@ export function ProfileView({ goAdmin, profile, sessionEmail }: { goAdmin: () =>
         <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 text-3xl font-extrabold text-white shadow-lg ring-4 ring-white">
           {displayName.charAt(0).toUpperCase()}
         </div>
-        <h1 className="mt-4 text-xl font-extrabold text-slate-900">{displayName}</h1>
+        <div className="mt-4 flex items-center gap-2">
+          <h1 className="text-xl font-extrabold text-slate-900">{displayName}</h1>
+          {isPartner && <PkBadge className="px-2 py-1 text-xs" />}
+        </div>
         <p className="text-sm text-slate-500">{email}</p>
       </div>
 

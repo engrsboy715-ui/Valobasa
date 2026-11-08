@@ -44,6 +44,7 @@ export function toJob(row: JobRow): Job {
     level: row.level as JobLevel,
     locked: row.locked,
     employerName: row.employer_name,
+    employerIsPartner: row.employer_is_partner,
     referenceScreenshot: row.reference_screenshot,
     pageLink: row.page_link ?? undefined,
     pageName: row.page_name,

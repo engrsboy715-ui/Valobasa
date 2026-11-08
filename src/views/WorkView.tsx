@@ -8,6 +8,7 @@ import { CopyButton, Toast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { TaskInstructions } from '@/components/TaskInstructions';
 import { useLanguage } from '@/lib/LanguageContext';
+import { PkBadge } from '@/components/PkBadge';
 import { fetchAllJobs, fetchMyDeposits, fetchMyProofs, submitProof, type Profile } from '@/lib/supabase';
 import { toJob } from '@/lib/mappers';
 import { useJobsRealtime } from '@/lib/useJobsRealtime';
@@ -280,6 +281,10 @@ function FeedScreen({ jobs, onPick }: { jobs: Job[]; onPick: (j: Job) => void })
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">{j.employerName.charAt(0).toUpperCase() || '?'}</div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold text-slate-800">{j.jobTitle}</p>
+            <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
+              <span className="truncate">{j.employerName}</span>
+              {j.employerIsPartner && <PkBadge />}
+            </p>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <span className="badge bg-slate-100 text-slate-600">{t(`${j.availableSlots} স্লট খালি`, `${j.availableSlots} slots open`)}</span>
               <span className="badge bg-violet-100 text-violet-700">{j.level}</span>
@@ -336,6 +341,7 @@ function DetailsScreen({ job, onAccept }: { job: Job; onAccept: () => void }) {
           <div className="flex items-center gap-2">
             <div className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-700">{job.employerName.charAt(0).toUpperCase() || '?'}</div>
             <span className="text-sm text-slate-700">{job.employerName}</span>
+            {job.employerIsPartner && <PkBadge />}
           </div>
         </Row>
       </div>

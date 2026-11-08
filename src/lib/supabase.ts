@@ -475,28 +475,55 @@ export interface Tutorial {
   id: string;
   title: string;
   video_url: string;
+  storage_path: string | null;
   created_at: string;
   updated_at: string;
 }
 
+export const TUTORIAL_VIDEO_MAX_MB = 200;
+export const TUTORIAL_VIDEO_MAX_BYTES = TUTORIAL_VIDEO_MAX_MB * 1024 * 1024;
+const TUTORIAL_BUCKET = 'tutorial-videos';
+
 export async function fetchTutorials(): Promise<Tutorial[]> {
   const { data, error } = await supabase
     .from('tutorials')
-    .select('*')
+    .select('id, title, video_url, storage_path, created_at, updated_at')
     .order('created_at', { ascending: false });
   if (error || !data) return [];
   return data as Tutorial[];
 }
 
-export async function createTutorial(title: string, videoUrl: string): Promise<{ success: boolean; message: string }> {
-  const { error } = await supabase.from('tutorials').insert({ title: title.trim(), video_url: videoUrl });
-  if (error) return { success: false, message: error.message };
+export async function uploadTutorial(title: string, file: File): Promise<{ success: boolean; message: string }> {
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4';
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const storage = supabase.storage.from(TUTORIAL_BUCKET);
+
+  const { error: uploadError } = await storage.upload(path, file, {
+    contentType: file.type || 'video/mp4',
+    cacheControl: '3600',
+  });
+  if (uploadError) return { success: false, message: `Video upload failed: ${uploadError.message}` };
+
+  const { data: urlData } = storage.getPublicUrl(path);
+  const { error } = await supabase.from('tutorials').insert({
+    title: title.trim(),
+    video_url: urlData.publicUrl,
+    storage_path: path,
+  });
+  if (error) {
+    await storage.remove([path]);
+    return { success: false, message: error.message };
+  }
   return { success: true, message: 'Tutorial uploaded successfully.' };
 }
 
-export async function deleteTutorial(id: string): Promise<{ success: boolean; message: string }> {
-  const { error } = await supabase.from('tutorials').delete().eq('id', id);
+export async function deleteTutorial(tutorial: Tutorial): Promise<{ success: boolean; message: string }> {
+  const { error } = await supabase.from('tutorials').delete().eq('id', tutorial.id);
   if (error) return { success: false, message: error.message };
+  if (tutorial.storage_path) {
+    const { error: removeError } = await supabase.storage.from(TUTORIAL_BUCKET).remove([tutorial.storage_path]);
+    if (removeError) return { success: true, message: `Tutorial deleted, but its video file could not be removed: ${removeError.message}` };
+  }
   return { success: true, message: 'Tutorial deleted.' };
 }
 
@@ -514,6 +541,7 @@ export interface JobRow {
   level: string;
   locked: boolean;
   employer_name: string;
+  employer_is_partner: boolean;
   page_name: string;
   reference_screenshot: string;
   page_link: string | null;
@@ -597,7 +625,7 @@ export async function adminFetchUsers(): Promise<Profile[]> {
   return data as Profile[];
 }
 
-export async function createJob(input: {
+export interface CreateTaskInput {
   work_id: string;
   platform: string;
   sub_task_type: string;
@@ -612,44 +640,91 @@ export async function createJob(input: {
   comment_lines: string[];
   instructions: string[];
   subtotal: number;
-  service_charge: number;
-  total_cost: number;
-}): Promise<{ success: boolean; message: string }> {
-  const { data: userData } = await supabase.auth.getUser();
-  const uid = userData.user?.id;
-  if (!uid) return { success: false, message: 'Not authenticated.' };
+}
 
-  const { error } = await supabase.from('jobs').insert({
-    user_id: uid,
-    work_id: input.work_id,
-    platform: input.platform,
-    sub_task_type: input.sub_task_type,
-    job_title: input.job_title,
-    rate: input.rate,
-    total_workers: input.total_workers,
-    available_slots: input.total_workers,
-    level: input.level,
-    employer_name: input.employer_name,
-    page_name: input.page_name,
-    reference_screenshot: input.reference_screenshot,
-    page_link: input.page_link ?? null,
-    comment_lines: input.comment_lines,
-    instructions: input.instructions,
-    status: 'Active',
-    subtotal: input.subtotal,
-    service_charge: input.service_charge,
-    total_cost: input.total_cost,
+export async function createJob(input: CreateTaskInput, partnerCode: string): Promise<{ success: boolean; message: string }> {
+  const { data, error } = await supabase.rpc('create_task', {
+    p_input: { ...input, page_link: input.page_link ?? null },
+    p_partner_code: partnerCode.trim() || null,
   });
   if (error) return { success: false, message: error.message };
+  return data as { success: boolean; message: string };
+}
 
-  const { error: txnError } = await supabase.rpc('add_transaction', {
-    p_type: 'spend',
-    p_amount: input.total_cost,
-    p_description: `Created task: ${input.job_title}`,
-  });
-  if (txnError) return { success: false, message: txnError.message };
+export interface PartnerCodeCheck {
+  valid: boolean;
+  message: string;
+  partner_name?: string;
+}
 
-  return { success: true, message: `Task created! ৳${input.total_cost.toFixed(2)} deducted. It's now live in Work.` };
+export async function validatePartnerCode(code: string): Promise<PartnerCodeCheck> {
+  const { data, error } = await supabase.rpc('validate_partner_code', { p_code: code.trim() });
+  if (error) return { valid: false, message: 'Could not verify the partner code. Please try again.' };
+  return data as PartnerCodeCheck;
+}
+
+export interface PartnerKey {
+  id: string;
+  user_id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  code: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export async function fetchMyPartnerKey(): Promise<PartnerKey | null> {
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) return null;
+  const { data, error } = await supabase
+    .from('partner_keys')
+    .select('*')
+    .eq('user_id', uid)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data as PartnerKey | null;
+}
+
+export async function applyForPartnerKey(): Promise<{ success: boolean; message: string }> {
+  const { data, error } = await supabase.rpc('apply_partner_key');
+  if (error) return { success: false, message: error.message };
+  return data as { success: boolean; message: string };
+}
+
+export interface AdminPartnerKeyRow {
+  id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  status: 'pending' | 'approved' | 'rejected';
+  code: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export async function adminFetchPartnerKeys(): Promise<AdminPartnerKeyRow[]> {
+  const { data, error } = await supabase.rpc('admin_list_partner_keys');
+  if (error || !data) return [];
+  return data as AdminPartnerKeyRow[];
+}
+
+export async function adminReviewPartnerKey(id: string, approve: boolean): Promise<{ success: boolean; message: string }> {
+  const { data, error } = await supabase.rpc('admin_review_partner_key', { p_id: id, p_approve: approve });
+  if (error) return { success: false, message: error.message };
+  return data as { success: boolean; message: string };
+}
+
+export interface AdminProfitBreakdown {
+  task_service_charge: number;
+  partner_key_fee: number;
+}
+
+export async function adminFetchProfitBreakdown(): Promise<AdminProfitBreakdown> {
+  const { data, error } = await supabase.rpc('admin_profit_breakdown');
+  if (error || !data) return { task_service_charge: 0, partner_key_fee: 0 };
+  return data as AdminProfitBreakdown;
 }
 
 export async function updateJobStatus(jobId: string, status: string, availableSlots?: number) {

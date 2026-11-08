@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { useLanguage } from '@/lib/LanguageContext';
 import type { Profile } from '@/lib/supabase';
+import { usePartnerStatus } from '@/lib/usePartnerStatus';
+import { PkBadge } from '@/components/PkBadge';
 import {
   X,
   UserRound,
@@ -13,11 +15,13 @@ import {
   FileText,
   Info,
   ChevronRight,
+  KeyRound,
 } from 'lucide-react';
 
 export type SideMenuDestination =
   | 'referral'
   | 'verification'
+  | 'partner-key'
   | 'share'
   | 'rate'
   | 'support'
@@ -35,6 +39,7 @@ interface Props {
 
 export function SideNavDrawer({ open, onClose, profile, onNavigate }: Props) {
   const [animClass, setAnimClass] = useState('translate-x-[-100%]');
+  const isPartner = usePartnerStatus(open);
 
   useEffect(() => {
     if (open) {
@@ -48,6 +53,7 @@ export function SideNavDrawer({ open, onClose, profile, onNavigate }: Props) {
   const menuItems: { key: SideMenuDestination; label: string; hint: string; icon: typeof UserRound }[] = [
     { key: 'referral', label: translate('Referral & Earn', 'Referral & Earn'), icon: Gift, hint: translate('Invite friends, earn coins', 'Invite friends, earn coins') },
     { key: 'verification', label: translate('Identity Verification', 'Identity Verification'), icon: ShieldCheck, hint: translate('Complete your KYC', 'Complete your KYC') },
+    { key: 'partner-key', label: translate('Partner Key', 'Partner Key'), icon: KeyRound, hint: translate('Earn commission on tasks', 'Earn commission on tasks') },
     { key: 'share', label: translate('Share App', 'Share App'), icon: Share2, hint: translate('Spread the word', 'Spread the word') },
     { key: 'rate', label: translate('Rate Us', 'Rate Us'), icon: Star, hint: translate('Leave feedback', 'Leave feedback') },
     { key: 'support', label: translate('Contact & Support', 'Contact & Support'), icon: MessageCircle, hint: translate('Live chat with us', 'Live chat with us') },
@@ -93,7 +99,10 @@ export function SideNavDrawer({ open, onClose, profile, onNavigate }: Props) {
               {(profile?.full_name ?? 'U').charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-lg font-bold leading-tight">{profile?.full_name ?? 'User'}</p>
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-lg font-bold leading-tight">{profile?.full_name ?? 'User'}</p>
+                {isPartner && <PkBadge />}
+              </div>
               <p className="truncate text-xs text-violet-200">{profile?.email ?? ''}</p>
             </div>
           </div>

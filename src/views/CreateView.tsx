@@ -4,12 +4,15 @@ import type { Job, Platform, JobLevel } from '@/types';
 import { APP_SETTINGS } from '@/lib/appSettings';
 import { toJob } from '@/lib/mappers';
 import { useJobsRealtime } from '@/lib/useJobsRealtime';
-import { createJob, fetchAllJobs, type Profile } from '@/lib/supabase';
+import { createJob, fetchAllJobs, validatePartnerCode, type Profile } from '@/lib/supabase';
 import { bdtPlain } from '@/lib/format';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Toast } from '@/components/ui';
 import { useLanguage } from '@/lib/LanguageContext';
-import { Check, Link2, Upload, Image as ImageIcon, X, Calculator, MessageSquare } from 'lucide-react';
+import { Check, Link2, Upload, Image as ImageIcon, X, Calculator, MessageSquare, KeyRound } from 'lucide-react';
+
+type PartnerCheck = { status: 'idle' | 'checking' | 'valid' | 'invalid'; message: string; partnerName: string };
+const IDLE_PARTNER_CHECK: PartnerCheck = { status: 'idle', message: '', partnerName: '' };
 
 export function CreateView({ profile, onChanged }: { profile: Profile | null; onChanged: () => Promise<void> }) {
   const { t } = useLanguage();
@@ -37,6 +40,31 @@ export function CreateView({ profile, onChanged }: { profile: Profile | null; on
   const [screenshot, setScreenshot] = useState<string>('');
   const [comments, setComments] = useState('');
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [partnerCode, setPartnerCode] = useState('');
+  const [partnerCheck, setPartnerCheck] = useState<PartnerCheck>(IDLE_PARTNER_CHECK);
+
+  useEffect(() => {
+    const code = partnerCode.trim();
+    if (!code) {
+      setPartnerCheck(IDLE_PARTNER_CHECK);
+      return;
+    }
+    setPartnerCheck({ status: 'checking', message: '', partnerName: '' });
+    let active = true;
+    const timer = setTimeout(async () => {
+      const res = await validatePartnerCode(code);
+      if (!active) return;
+      setPartnerCheck({
+        status: res.valid ? 'valid' : 'invalid',
+        message: res.message,
+        partnerName: res.partner_name ?? '',
+      });
+    }, 400);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [partnerCode]);
 
   const onPlatform = (p: Platform) => {
     setPlatform(p);
@@ -62,7 +90,10 @@ export function CreateView({ profile, onChanged }: { profile: Profile | null; on
   const r = rateForLevel(baseRate, level);
   const tw = parseInt(totalWorkers, 10) || 0;
   const subtotal = r * tw;
-  const serviceCharge = subtotal * (settings.serviceChargePercent / 100);
+  const partnerApplied = partnerCheck.status === 'valid';
+  const partnerBlocked = partnerCheck.status === 'checking' || partnerCheck.status === 'invalid';
+  const serviceChargePercent = partnerApplied ? settings.partnerServiceChargePercent : settings.serviceChargePercent;
+  const serviceCharge = subtotal * (serviceChargePercent / 100);
   const totalCost = subtotal + serviceCharge;
   const myBalance = profile?.balance ?? 0;
 
@@ -106,13 +137,11 @@ export function CreateView({ profile, onChanged }: { profile: Profile | null; on
         t('কাজ শেষ করে একটি পরিষ্কার স্ক্রিনশট নিন', 'Take a clear screenshot after completing the task'),
       ],
       subtotal,
-      service_charge: serviceCharge,
-      total_cost: totalCost,
-    });
+    }, partnerCode);
     setSubmitting(false);
     setToast({ msg: res.message, ok: res.success });
     if (res.success) {
-      setTotalWorkers(''); setPageName(''); setPageLink(''); setScreenshot(''); setComments('');
+      setTotalWorkers(''); setPageName(''); setPageLink(''); setScreenshot(''); setComments(''); setPartnerCode('');
       await onChanged();
       loadJobs();
     }
@@ -221,6 +250,28 @@ export function CreateView({ profile, onChanged }: { profile: Profile | null; on
         </div>
       )}
 
+      {/* Partner referral code */}
+      <div className="card space-y-2">
+        <label className="label flex items-center gap-1.5"><KeyRound size={14} /> {t('পার্টনার রেফারেল কোড (ঐচ্ছিক)', 'Partner Referral Code (optional)')}</label>
+        <input
+          className="input uppercase"
+          value={partnerCode}
+          onChange={(e) => setPartnerCode(e.target.value)}
+          placeholder="PK-XXXXXX"
+        />
+        {partnerCheck.status === 'checking' && (
+          <p className="text-xs text-slate-500">{t('কোড যাচাই করা হচ্ছে…', 'Checking code…')}</p>
+        )}
+        {partnerCheck.status === 'valid' && (
+          <p className="text-xs font-medium text-emerald-600">
+            {t(`${partnerCheck.partnerName} এর কোড প্রয়োগ হয়েছে — সার্ভিস চার্জ ${settings.partnerServiceChargePercent}%`, `Code from ${partnerCheck.partnerName} applied — service charge is ${settings.partnerServiceChargePercent}%`)}
+          </p>
+        )}
+        {partnerCheck.status === 'invalid' && (
+          <p className="text-xs font-medium text-rose-600">{partnerCheck.message}</p>
+        )}
+      </div>
+
       {/* Cost breakdown */}
       {r > 0 && tw > 0 && (
         <div className="card space-y-2.5 bg-violet-50/60 ring-violet-200">
@@ -228,7 +279,7 @@ export function CreateView({ profile, onChanged }: { profile: Profile | null; on
             <Calculator size={16} /> {t('খরচের হিসাব', 'Cost Breakdown')}
           </p>
           <Line label={t(`সাবটোটাল (${tw} × ৳${bdtPlain(r)})`, `Subtotal (${tw} × ৳${bdtPlain(r)})`)} value={`৳ ${bdtPlain(subtotal)}`} />
-          <Line label={t(`সার্ভিস চার্জ (${settings.serviceChargePercent}%)`, `Service Charge (${settings.serviceChargePercent}%)`)} value={`৳ ${bdtPlain(serviceCharge)}`} />
+          <Line label={t(`সার্ভিস চার্জ (${serviceChargePercent}%)`, `Service Charge (${serviceChargePercent}%)`)} value={`৳ ${bdtPlain(serviceCharge)}`} />
           <div className="border-t border-violet-200 pt-2.5">
             <Line label={t('মোট খরচ', 'Total Cost')} value={`৳ ${bdtPlain(totalCost)}`} bold />
           </div>
@@ -242,7 +293,7 @@ export function CreateView({ profile, onChanged }: { profile: Profile | null; on
 
       <button
         onClick={submit}
-        disabled={tw < settings.minWorkers || myBalance < totalCost || submitting}
+        disabled={tw < settings.minWorkers || myBalance < totalCost || submitting || partnerBlocked}
         className="brand-btn w-full py-3 text-base"
       >
         <Check size={18} /> {t('কাজটি পোস্ট করুন', 'Post Task')} · ৳ {bdtPlain(totalCost)}

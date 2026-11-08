@@ -25,7 +25,7 @@ export function BottomNav({ active, onChange }: { active: TabKey; onChange: (t: 
 
   return (
     <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-md -translate-x-1/2 border-t border-slate-200 bg-white/95 backdrop-blur-md">
-      <div className="mx-auto flex max-w-md items-stretch justify-between px-2 py-1.5">
+      <div className="mx-auto flex max-w-md items-stretch justify-between px-2 py-1.5 pb-[env(safe-area-inset-bottom)]">
         {TABS.map((t) => {
           const Icon = ICONS[t.icon];
           const isActive = active === t.key;

@@ -21,6 +21,7 @@ export interface Job {
   level: JobLevel;
   locked: boolean;
   employerName: string;
+  employerIsPartner: boolean;
   referenceScreenshot: string;
   pageLink?: string;
   pageName: string;
@@ -135,5 +136,8 @@ export interface WalletState {
 
 export interface Settings {
   serviceChargePercent: number; // e.g. 25
+  partnerServiceChargePercent: number; // service charge when a valid partner code is used
+  partnerCommissionPercent: number; // share of the order subtotal credited to the partner
+  partnerKeyFee: number; // one-time fee deducted when a Partner Key is approved
   minWorkers: number; // e.g. 5
 }

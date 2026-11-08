@@ -9,23 +9,23 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { CASH_OUT_RATE_PER_1000, cashOutCharge } from '@/lib/paymentRates';
 import {
   supabase,
-  adminFetchAllKyc, adminReviewKyc, adminFetchTickets, adminReply, adminFetchTicketMessages,
+  adminFetchAllKyc, adminReviewKyc, adminReviewPartnerKey, adminFetchTickets, adminReply, adminFetchTicketMessages,
   adminApproveDeposit, adminRejectDeposit, adminApproveWithdrawal, adminRejectWithdrawal,
   approveProofRPC, rejectProofRPC,
   fetchAllNotices, createNotice, toggleNoticeActive, deleteNotice, type Notice,
-  fetchTutorials, createTutorial, deleteTutorial, type Tutorial,
-  type AdminKycRow, type AdminTicketRow, type SupportMessage,
+  fetchTutorials, uploadTutorial, deleteTutorial, TUTORIAL_VIDEO_MAX_BYTES, TUTORIAL_VIDEO_MAX_MB, type Tutorial,
+  type AdminKycRow, type AdminTicketRow, type SupportMessage, type Profile, type AdminPartnerKeyRow,
 } from '@/lib/supabase';
 import {
   ChevronLeft, LayoutDashboard, Image as ImageIcon, Users, Wallet as WalletIcon,
   Settings as SettingsIcon, Check, X, Clock, Shield, ShieldOff, Ban, CircleDollarSign,
   TrendingUp, TrendingDown, AlertCircle, MessageSquare, Plus, Minus,
-  ShieldCheck, MessageCircle, Gift, Send, Loader2, IdCard,
+  ShieldCheck, MessageCircle, Gift, Send, Loader2, IdCard, KeyRound,
   Banknote, AlertTriangle, TrendingUp as TrendingUpIcon, DollarSign, Receipt,
   ArrowUpFromLine, Megaphone, Trash2, EyeOff, Eye, Video, Upload,
 } from 'lucide-react';
 
-type Section = 'dashboard' | 'finance' | 'proofs' | 'deposits' | 'withdrawals' | 'users' | 'settings' | 'kyc' | 'support' | 'tutorials' | 'referrals' | 'notices';
+type Section = 'dashboard' | 'finance' | 'proofs' | 'deposits' | 'withdrawals' | 'users' | 'settings' | 'kyc' | 'partners' | 'support' | 'tutorials' | 'referrals' | 'notices';
 
 export function AdminView({ onExit }: { onExit: () => void }) {
   const [section, setSection] = useState<Section>('dashboard');
@@ -53,6 +53,7 @@ export function AdminView({ onExit }: { onExit: () => void }) {
             ['withdrawals', 'Withdrawals', TrendingDown],
             ['users', 'Users', Users],
             ['kyc', 'KYC', ShieldCheck],
+            ['partners', 'Partners', KeyRound],
             ['support', 'Support', MessageCircle],
             ['tutorials', 'Tutorials', Video],
             ['referrals', 'Referrals', Gift],
@@ -81,6 +82,7 @@ export function AdminView({ onExit }: { onExit: () => void }) {
         {section === 'withdrawals' && <Withdrawals admin={admin} />}
         {section === 'users' && <UsersSection admin={admin} />}
         {section === 'kyc' && <KycSection />}
+        {section === 'partners' && <PartnerKeysSection admin={admin} />}
         {section === 'support' && <SupportSection />}
         {section === 'tutorials' && <TutorialsSection />}
         {section === 'referrals' && <ReferralsSection />}
@@ -117,10 +119,8 @@ function FinanceDashboard({ admin }: { admin: AdminData }) {
     return acc;
   }, {} as Record<string, { count: number; charge: number }>);
 
-  // 2b. Order Service Fee (25%) = Total Completed Order Amount * 0.25
-  const completedJobs = jobs.filter((j) => j.status === 'Completed');
-  const completedOrderAmount = completedJobs.reduce((sum, j) => sum + j.subtotal, 0);
-  const orderServiceFee = completedOrderAmount * 0.25;
+  // 2b. Task service charges recorded in the profit ledger when each task is posted
+  const orderServiceFee = admin.profit.task_service_charge;
 
   // 2c. Withdrawal Service Fee (25%) = Total Processed Withdrawal Amount * 0.25
   const processedWithdrawals = withdrawals.filter((w) => w.status === 'approved');
@@ -128,7 +128,8 @@ function FinanceDashboard({ admin }: { admin: AdminData }) {
   const withdrawalServiceFee = processedWithdrawalAmount * 0.25;
 
   // 3. Net Admin Profit
-  const netAdminProfit = depositProfit + orderServiceFee + withdrawalServiceFee;
+  const partnerKeyFees = admin.profit.partner_key_fee;
+  const netAdminProfit = depositProfit + orderServiceFee + withdrawalServiceFee + partnerKeyFees;
 
   // 4. Required bKash Balance
   const requiredBkashBalance = totalWalletLiability + netAdminProfit;
@@ -251,10 +252,18 @@ function FinanceDashboard({ admin }: { admin: AdminData }) {
           {/* Order Service Fee */}
           <ProfitCard
             icon={<TrendingUpIcon size={18} />}
-            label="Order Service Fee (25%)"
-            formula={`${completedJobs.length} completed orders × 25%`}
+            label="Task Service Charges"
+            formula="Recorded per task: 25%, or 15% of subtotal with a partner code"
             value={orderServiceFee}
             tone="bg-violet-50 ring-violet-200 icon-violet"
+          />
+          {/* Partner Key Fees */}
+          <ProfitCard
+            icon={<KeyRound size={18} />}
+            label="Partner Key Fees"
+            formula="৳250 per approved Partner Key"
+            value={partnerKeyFees}
+            tone="bg-emerald-50 ring-emerald-200 icon-emerald"
           />
           {/* Withdrawal Service Fee */}
           <ProfitCard
@@ -343,7 +352,7 @@ function FinanceDashboard({ admin }: { admin: AdminData }) {
             
           <p><span className="font-semibold text-slate-700">Order Service Fee</span> = Completed Order Amount × 25%</p>
           <p><span className="font-semibold text-slate-700">Withdrawal Service Fee</span> = Processed Withdrawal Amount × 25%</p>
-          <p><span className="font-semibold text-slate-700">Net Admin Profit</span> = Deposit Profit + Order Fee + Withdrawal Fee</p>
+          <p><span className="font-semibold text-slate-700">Net Admin Profit</span> = Deposit Profit + Order Fee + Withdrawal Fee + Partner Key Fees</p>
           <p><span className="font-semibold text-slate-700">Required bKash Balance</span> = User Wallet Liability + Net Admin Profit</p>
         </div>
       </div>
@@ -373,11 +382,12 @@ function ProfitCard({ icon, label, formula, value, tone }: { icon: React.ReactNo
 
 // ---------- Dashboard ----------
 function Dashboard({ admin }: { admin: AdminData }) {
-  const { jobs, proofs, deposits, withdrawals, users } = admin;
+  const { jobs, proofs, deposits, withdrawals, users, partnerKeys } = admin;
   const [kycCount, setKycCount] = useState(0);
   const [ticketCount, setTicketCount] = useState(0);
   const pendingProofs = proofs.filter((p) => p.status === 'Pending').length;
   const pendingDep = deposits.filter((d) => d.status === 'pending').length;
+  const pendingPartnerKeys = partnerKeys.filter((k) => k.status === 'pending').length;
   const pendingWd = withdrawals.filter((w) => w.status === 'pending').length;
   const activeJobs = jobs.filter((j) => j.status === 'Active').length;
 
@@ -398,6 +408,7 @@ function Dashboard({ admin }: { admin: AdminData }) {
         <Metric icon={<WalletIcon size={18} />} label="Pending Deposits" value={`${pendingDep}`} tone="bg-blue-100 text-blue-700" />
         <Metric icon={<TrendingDown size={18} />} label="Pending Withdrawals" value={`${pendingWd}`} tone="bg-rose-100 text-rose-700" />
         <Metric icon={<ShieldCheck size={18} />} label="Pending KYC" value={`${kycCount}`} tone="bg-teal-100 text-teal-700" />
+        <Metric icon={<KeyRound size={18} />} label="Partner Key Applications" value={`${pendingPartnerKeys}`} tone="bg-amber-100 text-amber-700" />
         <Metric icon={<MessageCircle size={18} />} label="Support Tickets" value={`${ticketCount}`} tone="bg-cyan-100 text-cyan-700" />
         <Metric icon={<Users size={18} />} label="Total Users" value={`${users.length}`} tone="bg-violet-100 text-violet-700" />
       </div>
@@ -689,26 +700,101 @@ function Withdrawals({ admin }: { admin: AdminData }) {
 // ---------- Users ----------
 function UsersSection({ admin }: { admin: AdminData }) {
   const { users } = admin;
+  const [selected, setSelected] = useState<Profile | null>(null);
 
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-bold text-slate-700">Users ({users.length})</h2>
       {users.length === 0 && <Empty text="No users yet." />}
       {users.map((u) => (
-        <div key={u.id} className="rounded-2xl bg-white p-3.5 ring-1 ring-slate-200">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
-              {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-slate-800">{u.full_name || 'No name'}</p>
-              <p className="truncate text-xs text-slate-500">{u.email}</p>
-              <p className="text-[10px] text-slate-400">Referral: {u.referral_code ?? '-'}</p>
-            </div>
-            <p className="text-sm font-bold text-violet-700">{bdt(Number(u.balance))}</p>
+        <button
+          key={u.id}
+          onClick={() => setSelected(u)}
+          className="flex w-full items-center gap-3 rounded-2xl bg-white p-3.5 text-left ring-1 ring-slate-200 transition hover:ring-violet-200 active:scale-[0.99]"
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
+            {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
           </div>
-        </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-slate-800">{u.full_name || 'No name'}</p>
+            <p className="truncate text-xs text-slate-500">{u.email}</p>
+            <p className="text-[10px] text-slate-400">Referral: {u.referral_code ?? '-'}</p>
+          </div>
+          <p className="text-sm font-bold text-violet-700">{bdt(Number(u.balance))}</p>
+        </button>
       ))}
+      {selected && (
+        <Modal onClose={() => setSelected(null)} title={selected.full_name || selected.email || 'User'}>
+          <UserKycDetail userId={selected.id} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function UserKycDetail({ userId }: { userId: string }) {
+  const [kyc, setKyc] = useState<AdminKycRow | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    adminFetchAllKyc().then((rows) => {
+      if (!active) return;
+      setKyc(rows.find((r) => r.user_id === userId) ?? null);
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [userId]);
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-violet-600" /></div>;
+  }
+  if (!kyc) return <Empty text="This user has not submitted KYC yet." />;
+
+  const fields: [string, string][] = [
+    ['Full Name', kyc.full_name],
+    ['ID Type', kyc.id_type],
+    ['ID Number', kyc.id_number],
+    ['Country', kyc.country],
+    ['Address', kyc.address],
+    ['Date of Birth', kyc.date_of_birth],
+    ['Gender', kyc.gender],
+  ];
+  const images: [string, string][] = [
+    ['ID Card Front', kyc.id_front_img],
+    ['ID Card Back', kyc.id_back_img],
+    ['Live Selfie', kyc.selfie_img],
+  ];
+  const statusLabel = kyc.status === 'pending' ? 'Pending' : kyc.status === 'verified' ? 'Approved' : 'Rejected';
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">Submitted {timeAgo(new Date(kyc.created_at).getTime())}</p>
+        <StatusPill status={statusLabel} />
+      </div>
+      <dl className="space-y-2 rounded-2xl bg-slate-50 p-3 text-sm ring-1 ring-slate-200">
+        {fields.map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-3">
+            <dt className="shrink-0 text-slate-500">{label}</dt>
+            <dd className="text-right font-semibold text-slate-800 break-words">{value || '-'}</dd>
+          </div>
+        ))}
+      </dl>
+      <div>
+        <p className="mb-2 text-xs font-bold text-slate-700">Documents</p>
+        <div className="grid grid-cols-3 gap-2">
+          {images.map(([label, src]) => (
+            <div key={label}>
+              <p className="mb-1 text-[11px] font-semibold text-slate-500">{label}</p>
+              <a href={src} target="_blank" rel="noreferrer">
+                <img src={src} alt={label} className="aspect-[3/4] w-full rounded-xl object-cover ring-1 ring-slate-200 transition hover:opacity-90" />
+              </a>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1069,9 +1155,12 @@ function TutorialsSection() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
-  const [videoUrl, setVideoUrl] = useState('');
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   useEffect(() => {
     load();
@@ -1094,29 +1183,27 @@ function TutorialsSection() {
   };
 
   const onFile = (file: File | undefined) => {
-    if (!file) { setVideoUrl(''); return; }
-    if (file.size > 50 * 1024 * 1024) {
-      setToast('Video file is too large (max 50MB). Please choose a smaller file.');
+    if (!file) { setVideoFile(null); setPreviewUrl(''); return; }
+    if (file.size > TUTORIAL_VIDEO_MAX_BYTES) {
+      setToast(`Video file is too large (max ${TUTORIAL_VIDEO_MAX_MB}MB). Please choose a smaller file.`);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setVideoUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setVideoFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
   const publish = async () => {
-    if (!title.trim() || !videoUrl) {
+    if (!title.trim() || !videoFile) {
       setToast('Both title and video file are required.');
       return;
     }
     setSaving(true);
-    const res = await createTutorial(title.trim(), videoUrl);
+    const res = await uploadTutorial(title, videoFile);
     setSaving(false);
     if (res.success) {
       setTitle('');
-      setVideoUrl('');
+      setVideoFile(null);
+      setPreviewUrl('');
       setShowForm(false);
       setToast(res.message);
       await load();
@@ -1125,8 +1212,8 @@ function TutorialsSection() {
     }
   };
 
-  const remove = async (id: string) => {
-    const res = await deleteTutorial(id);
+  const remove = async (tut: Tutorial) => {
+    const res = await deleteTutorial(tut);
     setToast(res.message);
     if (res.success) await load();
   };
@@ -1167,7 +1254,7 @@ function TutorialsSection() {
               <label className="label">Video File</label>
               <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500 transition hover:border-violet-400 hover:bg-violet-50/50">
                 <Upload size={20} />
-                {videoUrl ? 'Video selected. Tap to change.' : 'Tap to select a video from your gallery'}
+                {videoFile ? 'Video selected. Tap to change.' : 'Tap to select a video from your gallery'}
                 <input
                   type="file"
                   accept="video/*"
@@ -1175,15 +1262,15 @@ function TutorialsSection() {
                   onChange={(e) => onFile(e.target.files?.[0])}
                 />
               </label>
-              {videoUrl && (
+              {previewUrl && (
                 <div className="mt-2 overflow-hidden rounded-xl ring-1 ring-slate-200">
-                  <video src={videoUrl} className="aspect-video w-full object-cover" controls muted />
+                  <video src={previewUrl} className="aspect-video w-full object-cover" controls muted />
                 </div>
               )}
             </div>
             <button
               onClick={publish}
-              disabled={saving || !title.trim() || !videoUrl}
+              disabled={saving || !title.trim() || !videoFile}
               className="brand-btn w-full py-2.5 disabled:opacity-50"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
@@ -1209,7 +1296,7 @@ function TutorialsSection() {
                 <p className="text-xs text-slate-500">{timeAgo(new Date(tut.created_at).getTime())}</p>
               </div>
               <button
-                onClick={() => remove(tut.id)}
+                onClick={() => remove(tut)}
                 className="flex items-center justify-center rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600 ring-1 ring-rose-200 active:scale-95"
               >
                 <Trash2 size={14} />
@@ -1416,6 +1503,83 @@ function NoticesSection() {
 }
 
 // ---------- shared ----------
+function PartnerKeysSection({ admin }: { admin: AdminData }) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const pending = admin.partnerKeys.filter((k) => k.status === 'pending');
+  const reviewed = admin.partnerKeys.filter((k) => k.status !== 'pending');
+
+  const review = async (id: string, approve: boolean) => {
+    setBusyId(id);
+    const res = await adminReviewPartnerKey(id, approve);
+    setBusyId(null);
+    setToast({ msg: res.message, ok: res.success });
+    if (res.success) await admin.reload();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <h2 className="text-sm font-bold text-slate-700">Pending applications ({pending.length})</h2>
+        {pending.length === 0 && <Empty text="No pending Partner Key applications." />}
+        {pending.map((row) => (
+          <PartnerKeyRow key={row.id} row={row} busy={busyId === row.id} onReview={review} />
+        ))}
+      </div>
+      {reviewed.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-bold text-slate-700">Reviewed ({reviewed.length})</h2>
+          {reviewed.map((row) => (
+            <PartnerKeyRow key={row.id} row={row} busy={false} onReview={review} />
+          ))}
+        </div>
+      )}
+      {toast && <Toast message={toast.msg} onClose={() => setToast(null)} tone={toast.ok ? 'success' : 'error'} />}
+    </div>
+  );
+}
+
+function PartnerKeyRow({
+  row, busy, onReview,
+}: {
+  row: AdminPartnerKeyRow;
+  busy: boolean;
+  onReview: (id: string, approve: boolean) => void;
+}) {
+  const statusLabel = row.status === 'pending' ? 'Pending' : row.status === 'approved' ? 'Approved' : 'Rejected';
+  return (
+    <div className="rounded-2xl bg-white p-3.5 ring-1 ring-slate-200">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-slate-800">{row.full_name || 'No name'}</p>
+          <p className="truncate text-xs text-slate-500">{row.email}</p>
+          <p className="mt-1 text-[10px] text-slate-400">Applied {timeAgo(new Date(row.created_at).getTime())}</p>
+        </div>
+        <StatusPill status={statusLabel} />
+      </div>
+      {row.code && <p className="mt-2 font-mono text-sm font-bold tracking-widest text-slate-800">{row.code}</p>}
+      {row.status === 'pending' && (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            disabled={busy}
+            onClick={() => onReview(row.id, false)}
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 py-2.5 text-sm font-bold text-rose-700 ring-1 ring-rose-200 transition active:scale-95 disabled:opacity-50"
+          >
+            <X size={15} /> Reject
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => onReview(row.id, true)}
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white transition active:scale-95 disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Approve · ৳{APP_SETTINGS.partnerKeyFee}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
     Pending: 'bg-amber-100 text-amber-700',

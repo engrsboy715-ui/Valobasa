@@ -7,6 +7,9 @@ import { Mail, Lock, User as UserIcon, Eye, EyeOff, Loader2, Gift } from 'lucide
 type Mode = 'login' | 'signup';
 
 function friendlyAuthError(msg: string): string {
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return "Couldn't reach the server. Check your internet connection and try again.";
+  }
   if (msg.includes('User already registered')) return 'An account with this email already exists. Please log in.';
   if (msg.includes('Invalid login credentials')) return 'Incorrect email or password.';
   if (msg.includes('Password should be at least')) return 'Password must be at least 6 characters.';
