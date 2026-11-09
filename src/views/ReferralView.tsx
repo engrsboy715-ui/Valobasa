@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase, fetchReferralsAsReferrer, type Profile, type ReferralRow } from '@/lib/supabase';
+import { supabase, fetchReferralsAsReferrer, fetchDownloadLink, type Profile, type ReferralRow } from '@/lib/supabase';
 import { coinsToBdt, coinsToBdtDisplay, bdt, timeAgo } from '@/lib/format';
 import { Toast } from '@/components/ui';
 import { CopyButton } from '@/components/ui';
@@ -23,6 +23,7 @@ export function ReferralView({ onBack, profile }: { onBack: () => void; profile:
   const [referrals, setReferrals] = useState<ReferralRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [downloadLink, setDownloadLink] = useState<string | null>(null);
 
   const code = profile?.referral_code ?? 'ET------';
   const totalInvited = referrals.length;
@@ -34,6 +35,10 @@ export function ReferralView({ onBack, profile }: { onBack: () => void; profile:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    fetchDownloadLink().then(setDownloadLink);
+  }, []);
+
   const fetchReferralsAsReferrals = async () => {
     setLoading(true);
     const rows = await fetchReferralsAsReferrer();
@@ -41,7 +46,7 @@ export function ReferralView({ onBack, profile }: { onBack: () => void; profile:
     setLoading(false);
   };
 
-  const shareUrl = `https://etworkbd.app/?ref=${code}`;
+  const shareUrl = downloadLink ?? `https://etworkbd.app/?ref=${code}`;
   const fullShareText = `${SHARE_TEXT} ${code} — ${shareUrl}`;
 
   const share = async () => {

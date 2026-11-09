@@ -527,6 +527,27 @@ export async function deleteTutorial(tutorial: Tutorial): Promise<{ success: boo
   return { success: true, message: 'Tutorial deleted.' };
 }
 
+// ---------- App settings ----------
+const DOWNLOAD_LINK_KEY = 'download_link';
+
+export async function fetchDownloadLink(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', DOWNLOAD_LINK_KEY)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.value;
+}
+
+export async function saveDownloadLink(url: string): Promise<{ success: boolean; message: string }> {
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key: DOWNLOAD_LINK_KEY, value: url, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) return { success: false, message: error.message };
+  return { success: true, message: 'Download link saved.' };
+}
+
 // ---------- Jobs ----------
 export interface JobRow {
   id: string;

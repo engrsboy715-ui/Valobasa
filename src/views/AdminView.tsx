@@ -13,7 +13,7 @@ import {
   adminApproveDeposit, adminRejectDeposit, adminApproveWithdrawal, adminRejectWithdrawal,
   approveProofRPC, rejectProofRPC,
   fetchAllNotices, createNotice, toggleNoticeActive, deleteNotice, type Notice,
-  fetchTutorials, uploadTutorial, deleteTutorial, TUTORIAL_VIDEO_MAX_BYTES, TUTORIAL_VIDEO_MAX_MB, type Tutorial,
+  fetchDownloadLink, saveDownloadLink, fetchTutorials, uploadTutorial, deleteTutorial, TUTORIAL_VIDEO_MAX_BYTES, TUTORIAL_VIDEO_MAX_MB, type Tutorial,
   type AdminKycRow, type AdminTicketRow, type SupportMessage, type Profile, type AdminPartnerKeyRow,
 } from '@/lib/supabase';
 import {
@@ -802,6 +802,32 @@ function UserKycDetail({ userId }: { userId: string }) {
 // ---------- Settings ----------
 function SettingsSection() {
   const settings = APP_SETTINGS;
+  const [link, setLink] = useState('');
+  const [savedLink, setSavedLink] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchDownloadLink().then((url) => {
+      setSavedLink(url ?? '');
+      setLink(url ?? '');
+      setLoading(false);
+    });
+  }, []);
+
+  const save = async () => {
+    const trimmed = link.trim();
+    if (!isValidHttpsUrl(trimmed)) {
+      setToast('Please enter a valid link starting with https://');
+      return;
+    }
+    setSaving(true);
+    const res = await saveDownloadLink(trimmed);
+    setSaving(false);
+    setToast(res.message);
+    if (res.success) setSavedLink(trimmed);
+  };
 
   return (
     <div className="space-y-4">
@@ -812,8 +838,42 @@ function SettingsSection() {
           <Row label="Min Workers" value={`${settings.minWorkers}`} />
         </div>
       </div>
+
+      <div className="card">
+        <p className="text-sm font-bold text-slate-800">App Download Link</p>
+        <p className="mt-1 text-xs text-slate-500">Users share this link from the referral page. Include https://</p>
+        {loading ? (
+          <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-violet-600" /></div>
+        ) : (
+          <input
+            className="input mt-3"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            placeholder="https://example.com/app.apk"
+            inputMode="url"
+          />
+        )}
+        <button
+          onClick={save}
+          disabled={loading || saving || link.trim() === savedLink}
+          className="brand-btn mt-3 w-full py-2.5 disabled:opacity-50"
+        >
+          {saving ? <Loader2 size={16} className="animate-spin" /> : null}
+          Save Link
+        </button>
+      </div>
+
+      {toast && <Toast message={toast} onClose={() => setToast(null)} tone="success" />}
     </div>
   );
+}
+
+function isValidHttpsUrl(value: string) {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function Row({ label, value }: { label: string; value: string }) {

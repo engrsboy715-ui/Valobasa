@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { supabase, applyReferralCode } from '@/lib/supabase';
-import { FeederAppLogo } from '@/components/BrandLogos';
 import { Toast } from '@/components/ui';
 import { Mail, Lock, User as UserIcon, Eye, EyeOff, Loader2, Gift } from 'lucide-react';
 
@@ -88,7 +87,13 @@ export function AuthView() {
       <div className="flex min-h-screen flex-col px-6 py-10">
         {/* Brand */}
         <div className="flex flex-col items-center pt-6">
-          <FeederAppLogo className="h-14 w-14" />
+          <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200">
+            <img
+              src="/assets/images/97428.png"
+              alt="ET Work BD logo"
+              className="h-full w-full object-contain"
+            />
+          </div>
           <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-slate-900">
             {mode === 'signup' ? 'Create your account' : 'Welcome back'}
           </h1>
